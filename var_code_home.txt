@@ -1,0 +1,120 @@
+#Libararies
+library(quantmod)
+library(PerformanceAnalytics)
+library(xts)
+
+#THis is the first part of a tail risk hedging piece I am working on. THe idea
+#of this first part is to import a bunch of data from different financial time
+#series and quantify what "tail risk" actually is. This term gets used to frequently,
+#yet few people really understand what the difference is between regular "risk" and 
+#"tail risk." Everyone is interested in tail risk hedging, but when you query people
+#about different events and their relative magnitudes, people give wildly different
+#answers. So, I am going to use the VaR framework as a yard stick to measure the 
+#degree to which certain historical events exceed our expectations. 
+
+#This is no way is meant to lead into or be about the pros and cons of VaR. It's
+#just a convenient measuring tool that everyone in finance, whether you believe
+#in it's usefulness or not, can relate to. Like it or not, it's part of the daily
+#business of modern finance.
+
+#So, let's get started. First, we are going to use the VaR routines from 
+#Performance Analytics. The documentation is copious and I'll try to make some
+#sensible assumptions about its use as we go, but the actual VaR methodology 
+#is not the focus. Rather, we are interested to know the extent to which realized
+#returns exceed this measure as we move through time. Specifically, what does
+#the distribution of these "VaR Breaks" look like?
+
+#How to call VaR fromt the Performance Analytics package...
+VaR(R=ret,
+    p=.95,
+    method="gaussian",
+    clean="none",
+    portfolio_method="single",
+    weights=NULL,
+    mu=ret.mu,
+    sigma=ret.sig,
+    m3=NULL,#skewness of series
+    m4=NULL,#kurtosis of series
+    invert=TRUE)
+
+#get some data from FRED database and set some initial parameters.
+tickers=c("SP500","DJIA","DEXUSEU","DSWP5","DCOILWTICO")
+for (i in 1:length(tickers)){
+  getSymbols(tickers[i],src="FRED")
+}
+
+#Let's just focus on one data set for the moment...
+data<-DEXUSEU
+#Set some intitial parameters...
+var.yrs<-5
+biz.days<-252
+hist.len<-var.yrs*biz.days
+alpha=.05
+
+#Calculate a return series for the data object...
+ret<-periodReturn(data,period="daily",subset=NULL,type="log")
+
+#Calculate a rolling mean,std. dev., skewness and kurtosis for our series, 
+#given our VaR lookback length choice: var.yrs...
+ret.mu<-rollapply(ret,width=hist.len,FUN=mean)
+ret.sig<-rollapply(ret,width=hist.len,FUN=sd)
+ret.skew<-rollapply(ret,width=hist.len,FUN=function(ret) skewness(ret,method="moment"))
+ret.kurt<-rollapply(ret,width=hist.len,FUN=function(ret) kurtosis(ret,method="moment"))
+
+#We can now use rollapply to calculate the daily VaR we would have seen each day
+#as we went through history. I choose a guassian method and a single underlying.
+#Once we have it working properly, we can feed in m3 and m4 (skewness and kurtosis)
+#parameters. This will make the VaR calculation a little more realistic and consistent
+#with how many practitioners are using VaR. This method uses the Cornish-Fisher 
+#expansion and collapses to traditional mean-VaR when if the return stream
+#is normally distributed.
+
+ret.var<-rollapply(ret,width=hist.len,
+                   FUN=function(ret) VaR(R=ret,
+                                         p=.95,
+                                         method="gaussian",
+                                         clean="none",
+                                         portfolio_method="single",
+                                         weights=NULL,
+                                         mu=ret.mu,
+                                         sigma=ret.sig,
+                                         m3=ret.skew,#skewness of series
+                                         m4=ret.kurt,#kurtosis of series
+                                         invert=TRUE),
+                   align="right"
+                   )
+
+#let's look at the rolling VaRs...
+plot.xts(ret.var)
+summary(ret.var)
+
+#trim off the first part of the series that was used to estimate the firt mean/sd etc.
+#this makes the return subset the same length as ret.var...
+
+ret.sub<-ret['2004-01-07:/']
+#divide the the ACTUAL returns by that day's VaR etimate. This ratio
+#represents the multiple that the actual negative return was of the VaR estimate.
+#A ratio of 4x means that the realized negative return was 4x larger than than the VaR
+#estimate. Keep in mind that the VaRs are all negative. Negative VaRs divided by 
+#negative returns give positive ratios. So, in the resultant we only care about
+#the positive entries.
+
+act.var.ratio<-ret.sub/lag(ret.var,k=1)
+summary(act.var.ratio)
+plot(act.var.ratio,ylim=c(0,4))
+
+#Notice that the mean of the ratio series is near zero. This suggests that, when
+#losses occured, they were, on average, equal to the 1 day VaR. But, we're not
+#interested in what happens in the average case. We want to know how big crises ARE.
+#In the case of the EURUSD exchange rate, the worst outcomes since 2004 were 
+#about 4x VaR. There were a lot of observations that were at least 2x VaR.
+#Let's get look at the distribution of these VaR breaks:
+
+var.breaks<-subset(act.var.ratio,subset=(act.var.ratio$daily.returns>0))
+plot(var.breaks) #line plot of the breaks.
+hist(var.breaks) #histogram of the VaR breaks.
+
+#Now we can just loop through each of the data series we imported and run
+#the same analysis for each one. Then we'll examine the individual results as well as
+#aggregate them so we can draw some conclusions about how big, in VaR terms, all of 
+#historical crises have been.
