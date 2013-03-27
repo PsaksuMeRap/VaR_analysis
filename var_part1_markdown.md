@@ -3,53 +3,54 @@ Measuring the Intensity of Historical Crises with VaR
 Adam Duncan, December 2012
 
 ## Prelude
-These posts are written with dual purpose: 1) Hopefully provide some insight or inspiration
-into a topical issue in finance from a practioners perspective, and 2) show how to use R to 
-to craft an analysis and produce nice output. The posts are written in a "walkthrough" style.
-All of the source files are available at my [github repository](https://github.com/gtog/VaR_analysis). 
-Feel free to use the files for your own projects. I only ask that you credit appropriately.
+These posts are written with dual purpose: 1) Hopefully provide some insight or inspiration  
+into a topical issue in finance from a practioners perspective, and 2) show how to use R to  
+to craft an analysis and produce nice output. The posts are written in a "walkthrough" style.  
+All of the source files are available at my [github repository](https://github.com/gtog/VaR_analysis).   
+Feel free to use the files for your own projects. I only ask that you credit appropriately.  
 
-# Introduction: How big is a financial "crisis"?
+### Introduction: How big is a financial "crisis"?
 
-This is the first part of a series of practical examinations of tail risk. The idea
-of this first part is to import a bunch of different financial time series and quantify 
-what "tail risk" actually is. This term gets used too frequently,
-yet few people really understand what the difference is between regular "risk" and 
-"tail risk." Everyone is interested in tail risk hedging, but when you query people
-about different events and their relative magnitudes, people give wildly different
-answers. So, I am going to use the VaR framework as a yard stick to measure the 
-degree to which certain historical events exceed our expectations. 
+This is the first part of a series of practical examinations of tail risk. The idea  
+of this first part is to import a bunch of different financial time series and quantify  
+what "tail risk" actually is. This term gets used too frequently,  
+yet few people really understand what the difference is between regular "risk" and   
+"tail risk." Everyone is interested in tail risk hedging, but when you query people  
+about different events and their relative magnitudes, people give wildly different  
+answers. So, I am going to use the VaR framework as a yard stick to measure the   
+degree to which certain historical events exceed our expectations.   
 
-This in no way is meant to lead into or be about the pros and cons of VaR. It's
-just a convenient measuring tool that everyone in finance, whether you believe
-in it's usefulness or not, can relate to. Like it or not, it's part of the daily
-business of modern finance.
+This in no way is meant to lead into or be about the pros and cons of VaR. It's  
+just a convenient measuring tool that everyone in finance, whether you believe  
+in it's usefulness or not, can relate to. Like it or not, it's part of the daily  
+business of modern finance.  
 
-So, let's get started. First, we are going to use the VaR routines from the
-Performance Analytics package. The documentation is copious and I'll try to make some
-sensible assumptions about its use as we go, but the actual VaR methodology 
-is not the focus. Rather, we are interested to know the extent to which realized
-returns exceed this measure as we move through time. Specifically, what does
-the distribution of these "VaR Breaks" look like?
+So, let's get started. First, we are going to use the VaR routines from the  
+Performance Analytics package. The documentation is copious and I'll try to make some  
+sensible assumptions about its use as we go, but the actual VaR methodology   
+is not the focus. Rather, we are interested to know the extent to which realized  
+returns exceed this measure as we move through time. Specifically, what does  
+the distribution of these "VaR Breaks" look like?  
 
-Here is how you call VaR fromt the Performance Analytics package...
+Here is how you call VaR fromt the Performance Analytics package...  
 
-VaR(R=ret,
-  p=.95,
-  method="gaussian",
-  clean="none",
-  portfolio_method="single",
-  weights=NULL,
-  mu=ret.mu,
-  sigma=ret.sig,
-  m3=NULL,#skewness of series
-  m4=NULL,#kurtosis of series
-  invert=TRUE)
+VaR(R=ret,  
+  p=.95,  
+  method="gaussian",  
+  clean="none",  
+  portfolio_method="single",  
+  weights=NULL,  
+  mu=ret.mu,  
+  sigma=ret.sig,  
+  m3=NULL,#skewness of series  
+  m4=NULL,#kurtosis of series  
+  invert=TRUE)  
 
-Libararies we'll need (and all dependencies, naturally)...
-quantmod
-PerformanceAnalytics
-knitr
+Libararies we'll need (and all dependencies, naturally)...  
+*quantmod
+*PerformanceAnalytics
+*knitr
+
 
 ```
 ## Loading required package: zoo
@@ -80,19 +81,19 @@ knitr
 ```
 
 
-We need to get some data from FRED database and set some initial parameters...
+We need to get some data from FRED database and set some initial parameters...  
 
 
-Let's just focus on one data set for the moment. For example, let's choose USDMXN. For this post,
-we'll just construct the analysis for USDMXN. In the next post, we'll run through many variables
-and try to draw some more conclusions about the magnitude of past crises.
+Let's just focus on one data set for the moment. For example, let's choose USDMXN. For this post,  
+we'll just construct the analysis for USDMXN. In the next post, we'll run through many variables  
+and try to draw some more conclusions about the magnitude of past crises.  
 
 ```r
 data <- DEXMXUS  # Be careful when selecting data. For example, USDMXN goes UP in a crisis...
 data <- 1/data  # Since we're using USDMXN as an example will flip it to MXNUSD so it goes down in a crisis.
 ```
 
-Let's also set some intitial global parameters...
+Let's also set some intitial global parameters...  
 
 ```r
 var.yrs <- 5
@@ -101,15 +102,15 @@ hist.len <- var.yrs * biz.days
 p = 0.95
 ```
 
-Next we'll need to calculate a return series for the data object...
+Next we'll need to calculate a return series for the data object...  
 
 ```r
 ret <- periodReturn(data, period = "daily", subset = NULL, type = "log")
 ```
 
 
-Similarly, we'll need to calculate a rolling mean, std.dev., skewness and kurtosis for our series, 
-given our VaR lookback length choice: var.yrs.:
+Similarly, we'll need to calculate a rolling mean, std.dev., skewness and kurtosis for our series,   
+given our VaR lookback length choice: var.yrs.:  
 
 ```r
 ret.mu <- rollapply(ret, width = hist.len, FUN = mean)
@@ -122,18 +123,18 @@ ret.kurt <- rollapply(ret, width = hist.len, FUN = function(ret) kurtosis(ret,
 ```
 
 
-We can now use rollapply to calculate the daily VaR we would have seen each day
-in the sample data. I choose a *historical* VaR method to keep things simple and a single underlying.
-You can easily choose "gaussian" and pass in skewness and kurtosis, if you want to make it more consistent
-with how practitioners make parametric VaR estimates. Since we are using VaR as a measuring stick to 
-measure the intesnity of crises, parametric VaR isn't completely necessary. Having said that, it will affect
-the ratio of actual realized returns to *a priori* VaR estimates. With adjustments for skewness and kurtosis,
-ratios will be smaller, all else equal. That is, crises events will seem *less severe* when the distribution
-is adjusted for skewness and excess kurtosis.
+We can now use rollapply to calculate the daily VaR we would have seen each day  
+in the sample data. I choose a *historical* VaR method to keep things simple and a single underlying.  
+You can easily choose "gaussian" and pass in skewness and kurtosis, if you want to make it more consistent  
+with how practitioners make parametric VaR estimates. Since we are using VaR as a measuring stick to   
+measure the intesnity of crises, parametric VaR isn't completely necessary. Having said that, it will affect  
+the ratio of actual realized returns to *a priori* VaR estimates. With adjustments for skewness and kurtosis,  
+ratios will be smaller, all else equal. That is, crises events will seem *less severe* when the distribution  
+is adjusted for skewness and excess kurtosis.  
 
-Ok, let's examine the results of all that to make sure things are looking like they should. I always
-like to pause to examine some graphics along the way to make sure things are behaving as expected. It's
-better to find our early that we have a problem. Some plots:
+Ok, let's examine the results of all that to make sure things are looking like they should. I always  
+like to pause to examine some graphics along the way to make sure things are behaving as expected. It's  
+better to find our early that we have a problem. Some plots:  
 
 
 ```r
@@ -147,7 +148,7 @@ plot.xts(ret.kurt, las = 1, main = "Rolling Kurtosis", cex.main = 0.9)
 ![plot of chunk plotMoments](figure/plotMoments.png) 
 
 
-Great. All seems to be in order. One more to go...the rolling VaR estimates.
+Great. All seems to be in order. One more to go...the rolling VaR estimates.  
 
 ```r
 ret.var <- rollapply(ret, width = hist.len, FUN = function(ret) VaR(R = ret, 
@@ -157,7 +158,7 @@ ret.var <- rollapply(ret, width = hist.len, FUN = function(ret) VaR(R = ret,
 ```
 
 
-We better have a look at that handiwork before we move on...
+We better have a look at that handiwork before we move on...  
 
 ```r
 par(mfrow = c(1, 1))
@@ -167,10 +168,10 @@ plot.xts(ret.var, las = 1, main = "Rolling VaR Estimate", cex.main = 0.9)
 ![plot of chunk plotVaR](figure/plotVaR.png) 
 
 
-Now that we have the rolling VaR series, we can calculate the ratios of *actual returns* to VaR
-estimates. This will give us the magnitude of outcomes in multiples of daily value at risk.
-We need to trim off the first part of the series that was used to estimate the mean/sd etc.
-this makes the return subset the same length as ret.var.
+Now that we have the rolling VaR series, we can calculate the ratios of *actual returns* to VaR  
+estimates. This will give us the magnitude of outcomes in multiples of daily value at risk.  
+We need to trim off the first part of the series that was used to estimate the mean/sd etc.  
+this makes the return subset the same length as ret.var.  
 
 
 ```r
@@ -179,10 +180,10 @@ ret.sub <- window(ret, from = first.date)
 ```
 
 
-Now, divide the actual returns by the prior day's VaR etimate. This ratio
-represents the multiple that the actual negative return was of the VaR estimate.
-A ratio of -4x means that the realized negative return was 4x larger in magnitude than than the VaR
-estimate.
+Now, divide the actual returns by the prior day's VaR etimate. This ratio  
+represents the multiple that the actual negative return was of the VaR estimate.  
+A ratio of -4x means that the realized negative return was 4x larger in magnitude than than the VaR  
+estimate.  
 
 
 ```r
@@ -210,11 +211,11 @@ plot(var.breaks, las = 1, main = "Actual Negative Return(t) / Daily VaR Estimate
 ![plot of chunk varBreaks](figure/varBreaks.png) 
 
 
-For USDMXN, we can see that 2008 was 11x daily value at risk. Other, smaller crisis 
-episodes occur at around 4-5x daily VaR. Because we are using 5 years of history for the 
-VaR calculation, we miss the de-pegging of USDMXN that happened in 1994. That was on the order of 25x VaR. 
+For USDMXN, we can see that 2008 was 11x daily value at risk. Other, smaller crisis   
+episodes occur at around 4-5x daily VaR. Because we are using 5 years of history for the   
+VaR calculation, we miss the de-pegging of USDMXN that happened in 1994. That was on the order of 25x VaR.   
 
-Here is a histogram of the VaR breaks for USDMXN:
+Here is a histogram of the VaR breaks for USDMXN:  
 
 ```r
 hist(var.breaks, main = "Histogram of VaR Breaks (Multiples of Daily VaR", cex.main = 0.9)  # histogram of the VaR breaks.
@@ -223,22 +224,22 @@ hist(var.breaks, main = "Histogram of VaR Breaks (Multiples of Daily VaR", cex.m
 ![plot of chunk histogramUSDMXN](figure/histogramUSDMXN.png) 
 
 
-Now we can just loop through each of the data series we imported and run
-the same analysis for each one. Then we'll examine the individual results as well as
-aggregate them so we can draw some conclusions about how big, in VaR terms, past crises have been.
+Now we can just loop through each of the data series we imported and run  
+the same analysis for each one. Then we'll examine the individual results as well as  
+aggregate them so we can draw some conclusions about how big, in VaR terms, past crises have been.  
 
-# A Couple Workhorse Functions
-First, here is the workhorse function for the analysis. This is the function I use most when
-I want to examine VaR breaks for a given time series. This function takes raw time series data in 
-xts format (x), and returns one of a number of items depending on the value of 'rtype' passed to the function:
+### A Couple Workhorse Functions
+First, here is the workhorse function for the analysis. This is the function I use most when  
+I want to examine VaR breaks for a given time series. This function takes raw time series data in   
+xts format (x), and returns one of a number of items depending on the value of 'rtype' passed to the function:  
 
-'rtype' can take on the following valueS: "vars","returns","ratios","vol","skew","kurt","mean"
-'window' is the length of the lookback period in days.
-'p' is the quantile desired (e.g. .95, .99, etc.)
-'inv.var' sets whether you want positive or negative VaRs returned from VaR. See Performance Analytics::VaR
+'rtype' can take on the following valueS: "vars","returns","ratios","vol","skew","kurt","mean"  
+'window' is the length of the lookback period in days.  
+'p' is the quantile desired (e.g. .95, .99, etc.)  
+'inv.var' sets whether you want positive or negative VaRs returned from VaR. See Performance Analytics::VaR  
 
-Based on user input for rtype, the function takes the appropriate action.
-I'm only going to support the "historical" VaR method for now.
+Based on user input for rtype, the function takes the appropriate action.  
+I'm only going to support the "historical" VaR method for now.  
 
 ```r
 varFun<-function(x,p,window,method,inv.var,rtype){
@@ -321,14 +322,14 @@ varFun<-function(x,p,window,method,inv.var,rtype){
 ```
 
 
-We can now assign some variable, v, to hold the VaR breaks for the variable "data":
+We can now assign some variable, v, to hold the VaR breaks for the variable "data":  
 
 ```r
 v <- varFun(data, 0.95, 1260, "historical", FALSE, "ratios")
 ```
 
 
-And then plot them...
+And then plot them...  
 
 ```r
 plot.xts(subset(v, subset = (v < 0)), las = 1, main = "Rolling Historical VaR Breaks", 
@@ -338,12 +339,12 @@ plot.xts(subset(v, subset = (v < 0)), las = 1, main = "Rolling Historical VaR Br
 ![plot of chunk plotVarfun](figure/plotVarfun.png) 
 
 
-If you just have a bunch of tickers and want to see a summary of the VaR breaks, this will do it.
-This function loops through each of the data elements in 'tickers' and calculates some
-summary information. It returns a data frame of the results.
-Note: This is the **VERY slow way** to do this. It's better to import the data first, and then past a list
-of raw data variables to this function. Getting the data on the fly is slow and then you 
-don't have use of the variables on exit. I'll update this summary function in the next post.
+If you just have a bunch of tickers and want to see a summary of the VaR breaks, this will do it.  
+This function loops through each of the data elements in 'tickers' and calculates some  
+summary information. It returns a data frame of the results.  
+Note: This is the **VERY slow way** to do this. It's better to import the data first, and then past a list  
+of raw data variables to this function. Getting the data on the fly is slow and then you   
+don't have use of the variables on exit. I'll update this summary function in the next post.  
 
 
 ```r
@@ -388,7 +389,7 @@ vsum<-function(tickers,p,window,method,inv.var){
 ```
 
 
-# Next Up: Running this analysis across many assets
+### Next Up: Running this analysis across many assets  
 
 
 
